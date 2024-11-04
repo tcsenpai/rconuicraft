@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Server Control Panel</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .status-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .status-item {
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            flex: 1;
+            margin: 0 10px;
+            text-align: center;
+        }
+
+        .console {
+            background-color: #2c3e50;
+            color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+        }
+
+        .console-line {
+            margin: 5px 0;
+            font-family: monospace;
+        }
+
+        .command-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .quick-commands {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .status-online {
+            color: #2ecc71;
+        }
+
+        .status-offline {
+            color: #e74c3c;
+        }
+
+        .mods-list {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .mod-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .mod-item:last-child {
+            border-bottom: none;
+        }
+
+        #loginError {
+            background: #e74c3c;
+            color: white;
+            padding: 10px;
+            margin: 10px;
+            border-radius: 4px;
+            text-align: center;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loginError">Authentication failed. Please reload the page and try again.</div>
+    <div class="container">
+        <div class="header">
+            <h1>Minecraft Server Control Panel</h1>
+        </div>
+
+        <div class="status-container">
+            <div class="status-item">
+                <h3>Server Status</h3>
+                <span id="serverStatus" class="status-offline">Offline</span>
+            </div>
+            <div class="status-item">
+                <h3>Players</h3>
+                <span id="playerCount">0/20</span>
+            </div>
+            <div class="status-item">
+                <h3>TPS</h3>
+                <span id="tps">20</span>
+            </div>
+            <div class="status-item">
+                <h3>Uptime</h3>
+                <span id="uptime">0:00:00</span>
+            </div>
+        </div>
+
+        <div class="console" id="console"></div>
+
+        <div class="command-input">
+            <input type="text" id="commandInput" placeholder="Enter command..." onkeydown="handleKeyDown(event)">
+            <button onclick="sendCommand()">Send</button>
+        </div>
+
+        <div class="quick-commands">
+            <button onclick="sendCommand('list')">List Players</button>
+            <button onclick="sendCommand('tps')">Check TPS</button>
+            <button onclick="sendCommand('time query day')">Check Time</button>
+            <button onclick="sendCommand('weather query')">Check Weather</button>
+        </div>
+
+        <div class="mods-list">
+            <h2>Installed Mods</h2>
+            <div id="modsList"></div>
+        </div>
+    </div>
+
+    <script>
+        let commandHistory = [];
+        let historyIndex = -1;
+
+        function appendToConsole(command, response) {
+            const console = document.getElementById('console');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            if (command) {
+                console.innerHTML += `<div class="console-line">[${timestamp}] > ${command}</div>`;
+            }
+            if (response) {
+                console.innerHTML += `<div class="console-line">[${timestamp}] ${response}</div>`;
+            }
+            
+            console.scrollTop = console.scrollHeight;
+        }
+
+        async function sendCommand(cmd) {
+            const commandInput = document.getElementById('commandInput');
+            const command = cmd || commandInput.value;
+            
+            if (!command) return;
+
+            try {
+                const response = await fetch('/api/command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ command }),
+                });
+
+                if (response.status === 401) {
+                    document.getElementById('loginError').style.display = 'block';
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    appendToConsole(command, data.response);
+                    if (!cmd) {
+                        addToHistory(command);
+                        commandInput.value = '';
+                    }
+                } else {
+                    appendToConsole(command, `Error: ${data.error}`);
+                }
+            } catch (error) {
+                appendToConsole(command, `Error: ${error.message}`);
+            }
+        }
+
+        function addToHistory(command) {
+            commandHistory.unshift(command);
+            if (commandHistory.length > 50) {
+                commandHistory.pop();
+            }
+            historyIndex = -1;
+        }
+
+        function handleKeyDown(event) {
+            const commandInput = document.getElementById('commandInput');
+            
+            if (event.key === 'Enter') {
+                sendCommand();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (historyIndex < commandHistory.length - 1) {
+                    historyIndex++;
+                    commandInput.value = commandHistory[historyIndex];
+                }
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (historyIndex > -1) {
+                    historyIndex--;
+                    commandInput.value = historyIndex === -1 ? '' : commandHistory[historyIndex];
+                }
+            }
+        }
+
+        async function updateServerStatus() {
+            try {
+                const response = await fetch('/api/stats');
+                
+                if (response.status === 401) {
+                    document.getElementById('loginError').style.display = 'block';
+                    return;
+                }
+
+                const stats = await response.json();
+                
+                document.getElementById('playerCount').textContent = `${stats.players}/${stats.maxPlayers}`;
+                document.getElementById('tps').textContent = stats.tps.toFixed(1);
+                document.getElementById('serverStatus').className = 'status-online';
+                document.getElementById('serverStatus').textContent = 'Online';
+                
+                const hours = Math.floor(stats.uptime / 3600);
+                const minutes = Math.floor((stats.uptime % 3600) / 60);
+                const seconds = stats.uptime % 60;
+                document.getElementById('uptime').textContent = 
+                    `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+
+                const modsList = document.getElementById('modsList');
+                modsList.innerHTML = '';
+                stats.mods.forEach(mod => {
+                    const modDiv = document.createElement('div');
+                    modDiv.className = 'mod-item';
+                    modDiv.innerHTML = `
+                        <span>${mod.name}</span>
+                        <span>${mod.size}</span>
+                    `;
+                    modsList.appendChild(modDiv);
+                });
+            } catch (error) {
+                console.error('Error updating server status:', error);
+                document.getElementById('serverStatus').className = 'status-offline';
+                document.getElementById('serverStatus').textContent = 'Offline';
+            }
+        }
+
+        // Initial update and start periodic updates
+        updateServerStatus();
+        setInterval(updateServerStatus, 5000);
+    </script>
+</body>
+</html>
